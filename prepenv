@@ -1,0 +1,51 @@
+# prep platform
+
+## env
+export KUBECONFIG=/Users/newa/Documents/traefik/lab/k8s/kubeconfig
+export CLUSTERNAME=tykdemo
+
+## install tyk
+
+kubectl create namespace tyk
+
+#helm show values tyk-helm/tyk-pro > tyk/values.yaml
+
+helm install redis tyk-helm/simple-redis -n tyk
+helm install mongo tyk-helm/simple-mongodb -n tyk
+
+### deploy tyk
+helm upgrade --install tyk-pro tyk-helm/tyk-pro -f tyk/values.yaml -n tyk --wait
+
+### install cert manager
+kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/v1.8.0/cert-manager.yaml
+
+### create secret
+
+kubectl create namespace tyk-operator-system
+
+### get values
+export TYK_ORG=$(kubectl get secrets -n tyk tyk-operator-conf --template={{.data.TYK_ORG}} | base64 -d)
+export TYK_AUTH=$(kubectl get secrets -n tyk tyk-operator-conf --template={{.data.TYK_AUTH}} | base64 -d)
+export TYK_MODE=$(kubectl get secrets -n tyk tyk-operator-conf --template={{.data.TYK_MODE}} | base64 -d)
+export TYK_URL=$(kubectl get secrets -n tyk tyk-operator-conf --template={{.data.TYK_URL}} | base64 -d)
+
+kubectl create secret -n tyk-operator-system generic tyk-operator-conf \
+  --from-literal "TYK_AUTH=${TYK_AUTH}" \
+  --from-literal "TYK_ORG=${TYK_ORG}" \
+  --from-literal "TYK_MODE=${TYK_MODE}" \
+  --from-literal "TYK_URL=${TYK_URL}" \
+  --from-literal "TYK_TLS_INSECURE_SKIP_VERIFY=true"
+
+## install operator for ingress
+
+#helm repo add tyk-helm https://helm.tyk.io/public/helm/charts/
+#helm repo update
+helm install tyk-operator tyk-helm/tyk-operator -n tyk-operator-system
+kubectl apply -f https://raw.githubusercontent.com/TykTechnologies/tyk-operator/v0.11.0/helm/crds/crds.yaml
+
+kubectl get secret --namespace tyk tyk-pro-login-details -o jsonpath="{.data.TYK_PASS}" | base64 --decode
+
+###  
+curl http://petstore.tyk.mageekbox.eu:8080 \
+   -H "Accept: application/json" \
+   -H "Authorization: Bearer eyJvcmciOiI2MzRmYTQ0ZWJmNjY2YTAwMDE0NjI1YjQiLCJpZCI6ImQzMzJiOWM1OGQ2ODRkODdiZDQ2OTA2OWNkYTk2ZWUzIiwiaCI6Im11cm11cjEyOCJ9"
